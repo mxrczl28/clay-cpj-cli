@@ -11,6 +11,7 @@ from .config import (
     CLAY_APP_ORIGIN,
     CLAY_APP_REFERER,
     CLAY_FRONTEND_VERSION,
+    CLAY_USER_AGENT,
     MAX_RETRIES,
     RETRY_BACKOFF,
     get_workspace_id,
@@ -36,6 +37,7 @@ class ClayClient:
             "Origin": CLAY_APP_ORIGIN,
             "Referer": CLAY_APP_REFERER,
             "x-clay-frontend-version": CLAY_FRONTEND_VERSION,
+            "User-Agent": CLAY_USER_AGENT,
         }
 
     def _request(self, method, path, body=None):

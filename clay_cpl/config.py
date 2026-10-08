@@ -9,6 +9,13 @@ CLAY_API_BASE = "https://api.clay.com/v3"
 CLAY_APP_ORIGIN = "https://app.clay.com"
 CLAY_APP_REFERER = "https://app.clay.com/"
 CLAY_FRONTEND_VERSION = "v20260518_222738Z_bc4ef1d5e6"
+# Cloudflare in front of api.clay.com rejects the default "Python-urllib/x.y"
+# User-Agent with a 403 "Attention Required" page (observed 2026-10-08 on
+# actions/run-cpj-preview-enrichment). Send a regular browser User-Agent.
+CLAY_USER_AGENT = (
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
+    "(KHTML, like Gecko) Chrome/129.0.0.0 Safari/537.36"
+)
 
 ACTION_PACKAGE_ID = "e251a70e-46d7-4f3a-b3ef-a211ad3d8bd2"
 

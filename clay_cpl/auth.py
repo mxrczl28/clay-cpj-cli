@@ -14,6 +14,7 @@ import urllib.error
 
 from .config import (
     CLAY_API_BASE,
+    CLAY_USER_AGENT,
     SESSION_COOKIE_MAX_AGE_HOURS,
     SESSION_FILE,
     ensure_clay_cpl_dir,
@@ -116,7 +117,7 @@ class SessionManager:
         req = urllib.request.Request(
             url,
             data=payload,
-            headers={"Content-Type": "application/json"},
+            headers={"Content-Type": "application/json", "User-Agent": CLAY_USER_AGENT},
             method="POST",
         )
 
