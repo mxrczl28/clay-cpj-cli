@@ -1,6 +1,7 @@
 """Clay HTTP client — wraps urllib with auth, headers, and retries."""
 
 import json
+import socket
 import time
 import urllib.request
 import urllib.error
@@ -11,6 +12,7 @@ from .config import (
     CLAY_APP_ORIGIN,
     CLAY_APP_REFERER,
     CLAY_FRONTEND_VERSION,
+    CLAY_HTTP_TIMEOUT,
     CLAY_USER_AGENT,
     MAX_RETRIES,
     RETRY_BACKOFF,
@@ -51,7 +53,7 @@ class ClayClient:
         req = urllib.request.Request(url, data=data, headers=self._headers(), method=method)
 
         try:
-            with urllib.request.urlopen(req) as resp:
+            with urllib.request.urlopen(req, timeout=CLAY_HTTP_TIMEOUT) as resp:
                 raw = resp.read().decode()
                 return json.loads(raw) if raw else {}
         except urllib.error.HTTPError as e:
@@ -66,6 +68,14 @@ class ClayClient:
                 f"Network error: {e.reason}",
                 status_code=None,
                 response_body=str(e.reason),
+                network=True,
+            )
+        except (TimeoutError, socket.timeout, ConnectionError) as e:
+            raise ClayAPIError(
+                f"Network error: {e or 'timed out'} (timeout {CLAY_HTTP_TIMEOUT}s)",
+                status_code=None,
+                response_body=str(e),
+                network=True,
             )
 
     def request(self, method, path, body=None):
@@ -91,6 +101,13 @@ class ClayClient:
                         self.session.ensure_session()
                     except ClayAuthError:
                         raise e
+                    continue
+
+                # Network error on a read: retry with backoff. Writes (POST/DELETE) are
+                # not retried here - a resend could create a second Clay table; the
+                # caller restarts the whole step instead.
+                if e.network and method == "GET" and attempt < MAX_RETRIES - 1:
+                    time.sleep(RETRY_BACKOFF[min(attempt, len(RETRY_BACKOFF) - 1)])
                     continue
 
                 # 5xx: retry with backoff

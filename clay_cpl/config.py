@@ -25,6 +25,11 @@ DEFAULT_POLL_INTERVAL = 2
 BULK_FETCH_BATCH_SIZE = 200
 
 MAX_RETRIES = 3
+# Every HTTP request gets a timeout. Without one, a connection that drops mid-read
+# (flaky Wi-Fi) blocks forever - observed 2026-10-09: a full people search hung for
+# 35 minutes at "Fetching records" after Clay had finished. Override with
+# CLAY_CPL_HTTP_TIMEOUT (seconds).
+CLAY_HTTP_TIMEOUT = int(os.environ.get("CLAY_CPL_HTTP_TIMEOUT", "120"))
 RETRY_BACKOFF = [1, 2, 4]
 SESSION_COOKIE_MAX_AGE_HOURS = 23
 

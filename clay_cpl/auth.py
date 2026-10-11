@@ -14,6 +14,7 @@ import urllib.error
 
 from .config import (
     CLAY_API_BASE,
+    CLAY_HTTP_TIMEOUT,
     CLAY_USER_AGENT,
     SESSION_COOKIE_MAX_AGE_HOURS,
     SESSION_FILE,
@@ -122,7 +123,7 @@ class SessionManager:
         )
 
         try:
-            with urllib.request.urlopen(req) as resp:
+            with urllib.request.urlopen(req, timeout=CLAY_HTTP_TIMEOUT) as resp:
                 # Extract claysession from Set-Cookie headers
                 cookie_value = None
                 for header_name, header_value in resp.headers.items():
