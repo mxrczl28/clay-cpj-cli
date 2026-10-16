@@ -124,17 +124,20 @@ class SessionManager:
 
         try:
             with urllib.request.urlopen(req, timeout=CLAY_HTTP_TIMEOUT) as resp:
-                # Extract claysession from Set-Cookie headers
-                cookie_value = None
+                # Extract the session cookie from Set-Cookie headers. Clay renamed
+                # it to "__Host-claysession" (Oct 2026); accept both names and keep
+                # the Cloudflare cookie "__cf_bm" that the login response sets.
+                session_part, extra_parts = None, []
                 for header_name, header_value in resp.headers.items():
-                    if header_name.lower() == "set-cookie":
-                        if "claysession=" in header_value:
-                            parts = header_value.split(";")
-                            for part in parts:
-                                part = part.strip()
-                                if part.startswith("claysession="):
-                                    cookie_value = part
-                                    break
+                    if header_name.lower() != "set-cookie":
+                        continue
+                    first = header_value.split(";", 1)[0].strip()
+                    name = first.split("=", 1)[0]
+                    if name in ("claysession", "__Host-claysession"):
+                        session_part = first
+                    elif name == "__cf_bm":
+                        extra_parts.append(first)
+                cookie_value = "; ".join([session_part] + extra_parts) if session_part else None
 
                 if not cookie_value:
                     raise ClayAuthError(
