@@ -305,7 +305,8 @@ def _is_identifier(cell):
     from .search.signals import norm_domain, norm_linkedin
     if norm_linkedin(cell):
         return True
-    return bool(re.fullmatch(r"[a-z0-9-]+(\.[a-z0-9-]+)*\.[a-z]{2,}", norm_domain(cell)))
+    # Unicode labels too (`müller.de`), and punycode TLDs (`xn--p1ai`)
+    return bool(re.fullmatch(r"(?:[^\W_][\w-]*\.)+[^\W_\d][\w-]+", norm_domain(cell)))
 
 
 def _signal_columns(header):
@@ -335,8 +336,10 @@ def _read_signal_inputs(path):
         return [SignalInput.parse(l.strip()) for l in lines]
     dom_col, li_col = _signal_columns(first)
     if dom_col is None and li_col is None:
-        if len(first) == 1:                      # single-column list with a header word
-            return [SignalInput.parse(l.strip()) for l in lines[1:]]
+        if len(first) == 1:                      # single-column list
+            # a header word has no dot; anything with one is kept as an entry
+            start = 0 if "." in first[0] else 1
+            return [SignalInput.parse(l.strip()) for l in lines[start:]]
         raise SystemExit(f"error: no domain/website or LinkedIn column in header {first}")
     out = []
     for row in csv.reader(lines[1:]):

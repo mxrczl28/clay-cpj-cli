@@ -142,6 +142,9 @@ class SignalsTests(unittest.TestCase):
                          [("", "linkedin.com/company/acme"), ("", "linkedin.com/company/beta")])
         self.assertEqual(self._lines("domainfactory.de", "acme.com"), [("domainfactory.de", ""), ("acme.com", "")])
         self.assertEqual(self._lines("domain", "acme.com"), [("acme.com", "")])
+        self.assertEqual(self._lines("bäckerei-müller.de", "acme.com"), [("bäckerei-müller.de", ""), ("acme.com", "")])
+        self.assertEqual(self._lines("acme.de.", "beta.de:443"), [("acme.de", ""), ("beta.de", "")])
+        self.assertEqual(self._lines("müller.de"), [("müller.de", "")])
 
     def test_headers_with_dots_and_slashes(self):
         self.assertEqual(self._lines("Nr.,Firma,Domain,Company LinkedIn URL",

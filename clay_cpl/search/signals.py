@@ -29,7 +29,7 @@ def norm_domain(value):
     d = (value or "").strip().lower()
     d = re.sub(r"^https?://", "", d)
     d = re.sub(r"^www\.", "", d)
-    return d.split("/")[0].split("?")[0]
+    return d.split("/")[0].split("?")[0].split(":")[0].rstrip(".")
 
 
 def norm_linkedin(value):
