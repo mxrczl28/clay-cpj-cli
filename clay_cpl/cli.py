@@ -299,24 +299,39 @@ def cmd_company_search(args):
     return cmd_entity_search(args)
 
 
+def _signal_columns(header):
+    """Column indexes for domain and company LinkedIn in a header row, or (None, None)."""
+    h = [c.strip().lower() for c in header]
+    if any("." in c or "/" in c for c in h):   # a data row, not a header
+        return None, None
+    dom = next((i for i, c in enumerate(h) if c in ("domain", "company_domain", "company domain")), None)
+    if dom is None:
+        dom = next((i for i, c in enumerate(h) if "domain" in c or "website" in c), None)
+    lis = [i for i, c in enumerate(h) if "linkedin" in c]
+    li = next((i for i in lis if "compan" in h[i] or "firm" in h[i]), lis[0] if lis else None)
+    return dom, li
+
+
 def _read_signal_inputs(path):
-    """SignalInputs from a CSV (domain and/or LinkedIn column, common spellings) or one identifier per line."""
+    """SignalInputs from a CSV (domain and/or company LinkedIn column) or one identifier per line.
+
+    The first line is a header only if it names such a column and holds no identifier itself,
+    so a plain list that starts with a URL or with a domain like `domainfactory.de` keeps it.
+    """
     from .search.signals import SignalInput, norm_domain, norm_linkedin
     with open(path, newline="", encoding="utf-8-sig") as f:
         lines = [l for l in f.read().splitlines() if l.strip()]
     if not lines:
         return []
-    header = [h.strip().lower() for h in next(csv.reader([lines[0]]))]
-    dom_col = next((i for i, h in enumerate(header) if h in ("domain", "company_domain", "website", "company domain")), None)
-    li_col = next((i for i, h in enumerate(header) if "linkedin" in h), None)
+    dom_col, li_col = _signal_columns(next(csv.reader([lines[0]])))
     if dom_col is None and li_col is None:
-        return [SignalInput.parse(l.strip()) for l in lines if not l.lower().startswith("domain")]
+        return [SignalInput.parse(l.strip()) for l in lines]
     out = []
     for row in csv.reader(lines[1:]):
         dom = row[dom_col].strip() if dom_col is not None and dom_col < len(row) else ""
         li = row[li_col].strip() if li_col is not None and li_col < len(row) else ""
         if dom or li:
-            out.append(SignalInput(key=dom or li, domain=norm_domain(dom), linkedin=norm_linkedin(li)))
+            out.append(SignalInput(domain=norm_domain(dom), linkedin=norm_linkedin(li)))
     return out
 
 
@@ -326,7 +341,8 @@ def cmd_company_signals(args):
     bad = [f for f in fields if f not in ALL_FIELDS]
     if bad:
         raise SystemExit(f"error: unknown field(s) {bad}; choose from {list(ALL_FIELDS)}")
-    idents = _read_signal_inputs(args.input)
+    from .search.signals import as_inputs
+    idents = as_inputs(_read_signal_inputs(args.input))
     if not idents:
         raise SystemExit("error: no identifiers in input")
     quiet = getattr(args, "quiet", False)

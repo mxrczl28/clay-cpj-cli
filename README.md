@@ -126,9 +126,9 @@ clay-cpl companies signals --in companies.csv -f signals.csv
 clay-cpl companies signals --in companies.csv --fields year_founded,employee_growth_12mo --growth-step 1 -f signals.csv
 ```
 
-`--in` takes a CSV with a domain and/or LinkedIn column (any common header spelling) or one domain or LinkedIn URL per line. With both, the LinkedIn page decides which entity is meant (a subsidiary page stays the subsidiary); the domain is the fallback when Clay cannot resolve the slug. `matched_by` in the output says which one matched.
+`--in` takes a CSV with a domain and/or LinkedIn column (any common header spelling) or one domain or LinkedIn URL per line. With both, the LinkedIn page decides which entity is meant (a subsidiary page stays the subsidiary); the domain is the fallback when the LinkedIn page in the input is not the one Clay has (for example a renamed slug). `matched_by` says which one matched. One output row per distinct domain/LinkedIn pair, in input order.
 
-Output per input row: `clay_company_id`, `clay_name`, `clay_domain`, `clay_linkedin_url`, `estimated_employee_count`, `year_founded` (exact year, or `<1800`), and per growth field `headcount_growth_<n>mo_pct_min` / `_max` - the range in percentage points that the value lies in (`--growth-step` 1, 5, 10 or 25; default 5). Growth below -50 % or at/above +200 % is reported as an open range. An empty value means Clay has none.
+Output per input: `input_domain`, `input_linkedin`, `matched_by`, `clay_company_id`, `clay_name`, `clay_domain`, `clay_linkedin_url`, `estimated_employee_count`, `year_founded` (exact year, or `<1800`), and per growth field `headcount_growth_<n>mo_pct_min` / `_max` - the range in percentage points that the value lies in (`--growth-step` 1, 5, 10 or 25; default 5). Growth below -50 % or at/above +200 % is reported as an open range. An empty value means Clay has none.
 
 How it works, and its limits:
 

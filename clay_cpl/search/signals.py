@@ -67,20 +67,33 @@ def growth_grid(step_pct=5):
 
 @dataclass
 class SignalInput:
-    """One company to look up. `key` is what the output row is labelled with."""
-    key: str
+    """One company to look up: a normalised domain and/or LinkedIn company path.
+
+    Two inputs are the same only if both identifiers are equal - a parent and a subsidiary
+    sharing a domain but with their own LinkedIn pages stay two rows.
+    """
     domain: str = ""
     linkedin: str = ""
+
+    @property
+    def key(self):
+        return f"{self.domain}|{self.linkedin}"
 
     @classmethod
     def parse(cls, value):
         li = norm_linkedin(value)
-        return cls(key=value, linkedin=li) if li else cls(key=value, domain=norm_domain(value))
+        return cls(linkedin=li) if li else cls(domain=norm_domain(value))
+
+
+def as_inputs(inputs):
+    """SignalInputs from SignalInputs or plain strings, without empties, deduplicated, in order."""
+    items = (x if isinstance(x, SignalInput) else SignalInput.parse(x) for x in inputs if x)
+    return list({i.key: i for i in items if i.domain or i.linkedin}.values())
 
 
 @dataclass
 class CompanyRow:
-    key: str                    # input this company was matched to
+    key: str                    # SignalInput.key this company was matched to
     matched_by: str = ""        # "linkedin" or "domain"
     clay_company_id: str = ""
     name: str = ""
@@ -234,8 +247,7 @@ class CompanySignals:
         """`inputs`: SignalInput objects or plain strings (domain or LinkedIn URL)."""
         year = year or year_grid()
         growth = growth or growth_grid()
-        items = list({i.key: i for i in (x if isinstance(x, SignalInput) else SignalInput.parse(x)
-                                          for x in inputs if x)}.values())
+        items = as_inputs(inputs)
         out = {}
         blocks = [items[i:i + self.chunk_size] for i in range(0, len(items), self.chunk_size)]
         for n, block in enumerate(blocks, 1):
@@ -250,10 +262,10 @@ class CompanySignals:
 def to_rows(inputs, companies, fields):
     """Flatten results for CSV output, one row per input, in input order."""
     rows = []
-    keys = [x.key if isinstance(x, SignalInput) else x for x in inputs if x]
-    for key in dict.fromkeys(keys):
-        c = companies.get(key)
-        r = {"input": key, "matched_by": c.matched_by if c else "",
+    for i in as_inputs(inputs):
+        c = companies.get(i.key)
+        r = {"input_domain": i.domain, "input_linkedin": f"https://www.{i.linkedin}" if i.linkedin else "",
+             "matched_by": c.matched_by if c else "",
              "clay_company_id": c.clay_company_id if c else "", "clay_name": c.name if c else "",
              "clay_domain": c.domain if c else "", "clay_linkedin_url": c.linkedin_url if c else "",
              "estimated_employee_count": c.estimated_employee_count if c else ""}

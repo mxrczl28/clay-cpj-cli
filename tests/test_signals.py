@@ -61,7 +61,8 @@ def run(idents, fields, partial_above=None, **kw):
     fake = FakeClay(COMPANIES, partial_above)
     sig = CompanySignals(client=None, workers=2, query_fn=fake, **kw)
     found = sig.run(idents, fields, year=year_grid(1800, 2026), growth=growth_grid(5))
-    return {r["input"]: r for r in to_rows(idents, found, fields)}, sig, fake
+    rows = to_rows(idents, found, fields)
+    return {(r["input_domain"] or r["input_linkedin"]): r for r in rows}, sig, fake
 
 
 class SignalsTests(unittest.TestCase):
@@ -88,13 +89,14 @@ class SignalsTests(unittest.TestCase):
 
     def test_unmatched_and_linkedin_input(self):
         rows, _, _ = run(["https://de.linkedin.com/company/acme/", "nobody.de"], ["year_founded"])
-        self.assertEqual(rows["https://de.linkedin.com/company/acme/"]["year_founded"], "2015")
-        self.assertEqual(rows["https://de.linkedin.com/company/acme/"]["estimated_employee_count"], "40")
+        acme = rows["https://www.linkedin.com/company/acme"]
+        self.assertEqual(acme["year_founded"], "2015")
+        self.assertEqual(acme["estimated_employee_count"], "40")
         self.assertEqual(rows["nobody.de"]["matched_by"], "")
 
     def test_linkedin_first_domain_fallback(self):
-        inputs = [SignalInput("macon.de", domain="macon.de", linkedin="linkedin.com/company/macon-bau-old-slug"),
-                  SignalInput("big.com", domain="big.com", linkedin="linkedin.com/company/big-pt")]
+        inputs = [SignalInput(domain="macon.de", linkedin="linkedin.com/company/macon-bau-old-slug"),
+                  SignalInput(domain="big.com", linkedin="linkedin.com/company/big-pt")]
         rows, _, _ = run(inputs, ["year_founded"])
         self.assertEqual(rows["macon.de"]["matched_by"], "domain")
         self.assertEqual(rows["macon.de"]["year_founded"], "1996")
@@ -127,8 +129,32 @@ class SignalsTests(unittest.TestCase):
             w.writerow(["Acme", "acme.de", "https://www.linkedin.com/company/acme"])
             w.writerow(["NoLi", "noli.de", ""])
         got = _read_signal_inputs(f.name)
-        self.assertEqual([(i.key, i.domain, i.linkedin) for i in got],
-                         [("acme.de", "acme.de", "linkedin.com/company/acme"), ("noli.de", "noli.de", "")])
+        self.assertEqual([(i.domain, i.linkedin) for i in got],
+                         [("acme.de", "linkedin.com/company/acme"), ("noli.de", "")])
+
+    def _lines(self, *lines):
+        with tempfile.NamedTemporaryFile("w", suffix=".txt", delete=False) as f:
+            f.write("\n".join(lines) + "\n")
+        return [(i.domain, i.linkedin) for i in _read_signal_inputs(f.name)]
+
+    def test_plain_lists_keep_their_first_line(self):
+        self.assertEqual(self._lines("https://www.linkedin.com/company/acme", "https://www.linkedin.com/company/beta"),
+                         [("", "linkedin.com/company/acme"), ("", "linkedin.com/company/beta")])
+        self.assertEqual(self._lines("domainfactory.de", "acme.com"), [("domainfactory.de", ""), ("acme.com", "")])
+        self.assertEqual(self._lines("domain", "acme.com"), [("acme.com", "")])
+
+    def test_header_picks_company_linkedin_and_website_variants(self):
+        got = self._lines("Name,person_linkedin_url,Company LinkedIn URL,Website URL",
+                          "Ann,https://www.linkedin.com/in/ann,https://www.linkedin.com/company/acme,https://acme.de/")
+        self.assertEqual(got, [("acme.de", "linkedin.com/company/acme")])
+
+    def test_shared_domain_with_two_linkedin_pages_stays_two_rows(self):
+        inputs = [SignalInput(domain="big.com", linkedin="linkedin.com/company/big"),
+                  SignalInput(domain="big.com", linkedin="linkedin.com/company/big-pt")]
+        fake = FakeClay(COMPANIES)
+        sig = CompanySignals(client=None, workers=2, query_fn=fake)
+        rows = to_rows(inputs, sig.run(inputs, ["year_founded"], year=year_grid(1800, 2026)), ["year_founded"])
+        self.assertEqual([(r["clay_name"], r["year_founded"]) for r in rows], [("Big Parent", "1900"), ("Big Portugal", "")])
 
     def test_parser_registers_command(self):
         parser, _ = build_parser()
