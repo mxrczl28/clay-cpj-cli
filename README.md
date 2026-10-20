@@ -117,6 +117,26 @@ clay-cpl companies search --countries Germany --company-sizes "51-200,201-500" -
 clay-cpl companies search --semantic-description "B2B SaaS companies selling to HR teams" --limit 50 --output json
 ```
 
+## Company Signals
+
+Founding year, headcount growth and estimated employee count for companies you already have:
+
+```bash
+clay-cpl companies signals --in companies.csv -f signals.csv
+clay-cpl companies signals --in companies.csv --fields year_founded,employee_growth_12mo --growth-step 1 -f signals.csv
+```
+
+`--in` takes a CSV with a domain and/or LinkedIn column (any common header spelling) or one domain or LinkedIn URL per line. With both, the LinkedIn page decides which entity is meant (a subsidiary page stays the subsidiary); the domain is the fallback when Clay cannot resolve the slug. `matched_by` in the output says which one matched.
+
+Output per input row: `clay_company_id`, `clay_name`, `clay_domain`, `clay_linkedin_url`, `estimated_employee_count`, `year_founded` (exact year, or `<1800`), and per growth field `headcount_growth_<n>mo_pct_min` / `_max` - the range in percentage points that the value lies in (`--growth-step` 1, 5, 10 or 25; default 5). Growth below -50 % or at/above +200 % is reported as an open range. An empty value means Clay has none.
+
+How it works, and its limits:
+
+- Clay's search can filter on `year_founded` and `employee_growth_{3,6,12,24}mo` but never returns them. The command asks, for blocks of up to 200 companies, which of them fall in each range of a coarse-to-fine grid and reports the finest range each company came back in. The number of queries depends on how spread the values are, not on the number of companies; one query takes about 2 seconds, `--workers` (default 6) run in parallel. 46 companies with three fields: 176 queries, about 2 minutes.
+- It uses the endpoint behind the app's "Find leads" screen (`search-dsl/query`) with the clay-cpl session. That endpoint does not book the public API's yearly record quota (measured: 238 queries, counter unchanged). It is an internal endpoint and can change without notice.
+- When a query matches more than about 30 companies, Clay answers from part of its index (`previewCoverage: partial`) and silently drops matches. Such answers are halved and repeated until complete; the run summary reports how often that happened. At most 250 rows come back per query, so blocks are capped at 200 companies.
+- Growth is Clay's LinkedIn-based headcount ratio. For small companies a single hire or departure moves it by several percent.
+
 ## Job Search
 
 Jobs expose the current Clay source inputs:
