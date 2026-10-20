@@ -2,6 +2,7 @@
 
 import argparse
 import csv
+import re
 import getpass
 import json
 import subprocess
@@ -299,11 +300,17 @@ def cmd_company_search(args):
     return cmd_entity_search(args)
 
 
+def _is_identifier(cell):
+    """True for a company domain (`acme.de`, `https://www.acme.de/x`) or a LinkedIn company URL."""
+    from .search.signals import norm_domain, norm_linkedin
+    if norm_linkedin(cell):
+        return True
+    return bool(re.fullmatch(r"[a-z0-9-]+(\.[a-z0-9-]+)*\.[a-z]{2,}", norm_domain(cell)))
+
+
 def _signal_columns(header):
     """Column indexes for domain and company LinkedIn in a header row, or (None, None)."""
     h = [c.strip().lower() for c in header]
-    if any("." in c or "/" in c for c in h):   # a data row, not a header
-        return None, None
     dom = next((i for i, c in enumerate(h) if c in ("domain", "company_domain", "company domain")), None)
     if dom is None:
         dom = next((i for i, c in enumerate(h) if "domain" in c or "website" in c), None)
@@ -323,9 +330,14 @@ def _read_signal_inputs(path):
         lines = [l for l in f.read().splitlines() if l.strip()]
     if not lines:
         return []
-    dom_col, li_col = _signal_columns(next(csv.reader([lines[0]])))
-    if dom_col is None and li_col is None:
+    first = next(csv.reader([lines[0]]))
+    if any(_is_identifier(c) for c in first):   # no header: one identifier per line
         return [SignalInput.parse(l.strip()) for l in lines]
+    dom_col, li_col = _signal_columns(first)
+    if dom_col is None and li_col is None:
+        if len(first) == 1:                      # single-column list with a header word
+            return [SignalInput.parse(l.strip()) for l in lines[1:]]
+        raise SystemExit(f"error: no domain/website or LinkedIn column in header {first}")
     out = []
     for row in csv.reader(lines[1:]):
         dom = row[dom_col].strip() if dom_col is not None and dom_col < len(row) else ""

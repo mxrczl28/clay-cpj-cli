@@ -143,6 +143,16 @@ class SignalsTests(unittest.TestCase):
         self.assertEqual(self._lines("domainfactory.de", "acme.com"), [("domainfactory.de", ""), ("acme.com", "")])
         self.assertEqual(self._lines("domain", "acme.com"), [("acme.com", "")])
 
+    def test_headers_with_dots_and_slashes(self):
+        self.assertEqual(self._lines("Nr.,Firma,Domain,Company LinkedIn URL",
+                                     "1,Acme,acme.de,https://www.linkedin.com/company/acme"),
+                         [("acme.de", "linkedin.com/company/acme")])
+        self.assertEqual(self._lines("Firma,Website / Domain,LinkedIn", "Acme,https://acme.de/,"), [("acme.de", "")])
+
+    def test_header_without_known_column_fails_loudly(self):
+        with self.assertRaises(SystemExit):
+            self._lines("Firma,Ort", "Acme,Berlin")
+
     def test_header_picks_company_linkedin_and_website_variants(self):
         got = self._lines("Name,person_linkedin_url,Company LinkedIn URL,Website URL",
                           "Ann,https://www.linkedin.com/in/ann,https://www.linkedin.com/company/acme,https://acme.de/")
