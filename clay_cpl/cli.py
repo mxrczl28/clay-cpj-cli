@@ -2,6 +2,7 @@
 
 import argparse
 import csv
+import re
 import getpass
 import json
 import subprocess
@@ -297,6 +298,89 @@ def cmd_people_search(args):
 def cmd_company_search(args):
     args.entity = "companies"
     return cmd_entity_search(args)
+
+
+def _is_identifier(cell):
+    """True for a company domain (`acme.de`, `https://www.acme.de/x`) or a LinkedIn company URL."""
+    from .search.signals import norm_domain, norm_linkedin
+    if norm_linkedin(cell):
+        return True
+    # Unicode labels too (`müller.de`), and punycode TLDs (`xn--p1ai`)
+    return bool(re.fullmatch(r"(?:[^\W_][\w-]*\.)+[^\W_\d][\w-]+", norm_domain(cell)))
+
+
+def _signal_columns(header):
+    """Column indexes for domain and company LinkedIn in a header row, or (None, None)."""
+    h = [c.strip().lower() for c in header]
+    dom = next((i for i, c in enumerate(h) if c in ("domain", "company_domain", "company domain")), None)
+    if dom is None:
+        dom = next((i for i, c in enumerate(h) if "domain" in c or "website" in c), None)
+    lis = [i for i, c in enumerate(h) if "linkedin" in c]
+    li = next((i for i in lis if "compan" in h[i] or "firm" in h[i]), lis[0] if lis else None)
+    return dom, li
+
+
+def _read_signal_inputs(path):
+    """SignalInputs from a CSV (domain and/or company LinkedIn column) or one identifier per line.
+
+    The first line is a header only if it names such a column and holds no identifier itself,
+    so a plain list that starts with a URL or with a domain like `domainfactory.de` keeps it.
+    """
+    from .search.signals import SignalInput, norm_domain, norm_linkedin
+    with open(path, newline="", encoding="utf-8-sig") as f:
+        lines = [l for l in f.read().splitlines() if l.strip()]
+    if not lines:
+        return []
+    first = next(csv.reader([lines[0]]))
+    if any(_is_identifier(c) for c in first):   # no header: one identifier per line
+        return [SignalInput.parse(l.strip()) for l in lines]
+    dom_col, li_col = _signal_columns(first)
+    if dom_col is None and li_col is None:
+        if len(first) == 1:                      # single-column list
+            # a header word has no dot; anything with one is kept as an entry
+            start = 0 if "." in first[0] else 1
+            return [SignalInput.parse(l.strip()) for l in lines[start:]]
+        raise SystemExit(f"error: no domain/website or LinkedIn column in header {first}")
+    out = []
+    for row in csv.reader(lines[1:]):
+        dom = row[dom_col].strip() if dom_col is not None and dom_col < len(row) else ""
+        li = row[li_col].strip() if li_col is not None and li_col < len(row) else ""
+        if dom or li:
+            out.append(SignalInput(domain=norm_domain(dom), linkedin=norm_linkedin(li)))
+    return out
+
+
+def cmd_company_signals(args):
+    from .search.signals import ALL_FIELDS, CompanySignals, growth_grid, to_rows, year_grid
+    fields = [f.strip() for f in args.fields.split(",") if f.strip()]
+    bad = [f for f in fields if f not in ALL_FIELDS]
+    if bad:
+        raise SystemExit(f"error: unknown field(s) {bad}; choose from {list(ALL_FIELDS)}")
+    from .search.signals import as_inputs
+    idents = as_inputs(_read_signal_inputs(args.input))
+    if not idents:
+        raise SystemExit("error: no identifiers in input")
+    quiet = getattr(args, "quiet", False)
+    on_progress = (lambda m: None) if quiet else _progress
+    on_progress(f"Clay company signals: {len(idents)} companies, fields {', '.join(fields)}")
+    sig = CompanySignals(ClayClient(), workers=args.workers, chunk_size=args.chunk_size, on_progress=on_progress)
+    companies = sig.run(idents, fields, year=year_grid(args.first_year), growth=growth_grid(args.growth_step))
+    rows = to_rows(idents, companies, fields)
+    out = args.output_file or f"clay_signals_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
+    with open(out, "w", newline="", encoding="utf-8") as f:
+        w = csv.DictWriter(f, fieldnames=list(rows[0].keys()))
+        w.writeheader()
+        w.writerows(rows)
+    matched = sum(1 for r in rows if r["matched_by"])
+    on_progress(f"Wrote {len(rows)} rows to {out}: {matched} matched, {sig.queries} queries"
+                f" ({sig.partial} incomplete answers split and repeated)")
+    for fld in fields:
+        col = "year_founded" if fld == "year_founded" else fld.replace("employee_growth_", "headcount_growth_") + "_pct_min"
+        alt = None if fld == "year_founded" else col.replace("_min", "_max")
+        n = sum(1 for r in rows if r.get(col) or (alt and r.get(alt)))
+        on_progress(f"  {fld}: {n} of {matched} matched companies have a value")
+    if sig.capped:
+        on_progress(f"WARNING: {len(sig.capped)} queries hit the 250-row cap - values may be incomplete; lower --chunk-size")
 
 
 def cmd_job_search(args):
@@ -748,6 +832,7 @@ def build_parser():
     sub = parser.add_subparsers(dest="command")
 
     subparsers = {}
+    entity_subs = {}
     for entity, help_text, handler in [
         ("companies", "Company operations", cmd_company_search),
         ("people", "People operations", cmd_people_search),
@@ -756,6 +841,7 @@ def build_parser():
         entity_parser = sub.add_parser(entity, help=help_text)
         subparsers[entity] = entity_parser
         entity_sub = entity_parser.add_subparsers(dest=f"{entity}_command")
+        entity_subs[entity] = entity_sub
         search = entity_sub.add_parser("search", help=f"Search for {entity}")
         search.set_defaults(func=handler, entity=entity)
         _add_shared_search_args(search)
@@ -766,6 +852,19 @@ def build_parser():
             _add_company_alias_args(search)
         else:
             _add_job_alias_args(search)
+
+    sig = entity_subs["companies"].add_parser(
+        "signals", help="Founding year and headcount growth for known companies (free, via Clay's app search)")
+    sig.add_argument("--in", dest="input", required=True, help="CSV with a domain and/or LinkedIn column (both are used: LinkedIn match first, domain as fallback), or one domain or LinkedIn URL per line")
+    sig.add_argument("--fields", default="year_founded,employee_growth_6mo,employee_growth_12mo",
+                     help="Comma list: year_founded, employee_growth_3mo|6mo|12mo|24mo")
+    sig.add_argument("--growth-step", type=int, choices=[1, 5, 10, 25], default=5, help="Growth precision in percentage points")
+    sig.add_argument("--first-year", type=int, default=1800, help="Founding years before this are reported as <YEAR")
+    sig.add_argument("--workers", type=int, default=6, help="Parallel queries")
+    sig.add_argument("--chunk-size", type=int, default=200, help="Companies per block (max 200)")
+    sig.add_argument("--output-file", "-f", help="Output CSV path")
+    sig.add_argument("--quiet", "-q", action="store_true")
+    sig.set_defaults(func=cmd_company_signals)
 
     table_parser = sub.add_parser("table", help="Table operations")
     subparsers["table"] = table_parser
